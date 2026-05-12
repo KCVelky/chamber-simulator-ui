@@ -1,0 +1,7 @@
+PySide6
+qt-material
+numpy
+matplotlib
+pyvista
+pyvistaqt
+vtk

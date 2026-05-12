@@ -1,0 +1,59 @@
+# Environnement virtuel
+.venv/
+venv/
+env/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Build / packaging
+build/
+dist/
+*.egg-info/
+
+# IDE
+.vscode/
+.idea/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Logs
+*.log
+
+# Fichiers temporaires
+*.tmp
+*.bak
+*.swp
+.DS_Store
+Thumbs.db
+
+# Archives
+*.zip
+*.rar
+*.7z
+
+# Données générées / exports éventuels
+outputs/
+results/
+exports/
+figures/
+screenshots/
+
+# Fichiers lourds éventuels
+*.vtk
+*.vtu
+*.vtp
+*.stl
+*.obj
+*.ply
+
+# Cache PyVista / VTK éventuel
+.cache/

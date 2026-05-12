@@ -1,0 +1,76 @@
+{
+  "geometry": {
+    "Lx": "8.0",
+    "Ly": "8",
+    "Lz": "8",
+    "margin": "0.05",
+    "source": {
+      "x": "4",
+      "y": "6",
+      "z": "4"
+    },
+    "mics_csv": "2,2,2\n6,2,2\n2,6,2\n6,6,2\n2,2,6\n6,2,6\n2,6,6\n6,6,6"
+  },
+  "signal": {
+    "fs": "8000",
+    "duration": "6.0",
+    "f_low": "200",
+    "f_high": "400",
+    "rms": "3",
+    "seed": "42",
+    "use_mod": true,
+    "f_mod": "0.25",
+    "mod_depth": "0.2",
+    "use_fade": true,
+    "fade_in": "0.2",
+    "fade_out": "0.2"
+  },
+  "propagation": {
+    "c": "343.0",
+    "use_spreading": true,
+    "gain_at_1m": "1.0",
+    "use_floor_image": true,
+    "floor_z": "0.0",
+    "add_noise": true,
+    "snr_db": "20.0",
+    "noise_indep": true,
+    "noise_seed": "123",
+    "enable_denoise": true,
+    "denoise_nperseg": "1024",
+    "denoise_noverlap": "768",
+    "denoise_noise_head": "0.20",
+    "denoise_noise_tail": "0.20",
+    "denoise_gain_floor": "0.05"
+  },
+  "algorithms": {
+    "enable_algorithms": true,
+    "alg_choice": "ER_LS",
+    "tdoa_interp": "8",
+    "tdoa_grid_dx": "0.10",
+    "tdoa_grid_dy": "0.10",
+    "tdoa_grid_dz": "0.10",
+    "tdoa_z_fixed": "",
+    "plot_estimated_source": true,
+    "er_ref_idx": "0",
+    "er_window_s": "0.50",
+    "er_hop_s": "0.25",
+    "er_trim_frac": "0.10",
+    "er_kappa_eps": "0.001",
+    "ernls_max_iter": "50",
+    "ernls_lam": "0.01",
+    "ernls_tol_step": "1e-6",
+    "ernls_tol_cost": "1e-9"
+  },
+  "plots": {
+    "plot_source_spectrogram": false,
+    "plot_scene": true,
+    "plot_source_time": false,
+    "plot_source_spectrum": false,
+    "plot_mic_spectrogram": true,
+    "mic_spec_index": "0",
+    "plot_mics": false,
+    "plot_mics_zoom": false,
+    "print_delta_r": false,
+    "zoom_tmax": "0.2"
+  }
+}
