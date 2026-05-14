@@ -230,6 +230,8 @@ def run_experiment_from_config(cfg_in: Dict[str, Any], log: LogFn = None, show_p
         _float(src_raw.get("z", "0"), "src_z"),
     ], dtype=float)
     mic_positions = _parse_floats_csv(g.get("mics_csv", ""))
+    algorithm_mics_csv = g.get("algorithm_mics_csv") or g.get("est_mics_csv") or g.get("mics_csv", "")
+    algorithm_mic_positions = _parse_floats_csv(algorithm_mics_csv)
 
     room = make_semi_anechoic_room(Lx=Lx, Ly=Ly, Lz=Lz, floor_rigid=True)
     mics = MicArray(positions=mic_positions, name="ui_mics")
@@ -275,6 +277,13 @@ def run_experiment_from_config(cfg_in: Dict[str, Any], log: LogFn = None, show_p
         floor_z=_float(p["floor_z"], "floor_z"),
     )
     y, d = simulate_mic_signals_free_field(scene, t, s, prop_cfg)
+    mic_gain_errors = str(p.get("mic_gain_errors_db", "") or "").strip()
+    if mic_gain_errors:
+        gains_db = np.array([float(item.strip()) for item in mic_gain_errors.split(",") if item.strip()], dtype=float)
+        if gains_db.size != y.shape[0]:
+            raise ValueError(f"mic_gain_errors_db must contain {y.shape[0]} values, got {gains_db.size}.")
+        y = y * (10.0 ** (gains_db[:, None] / 20.0))
+        _log(log, f"Applied per-microphone gain errors [dB]: {np.round(gains_db, 3)}")
     _log(log, f"Propagation simulated for {y.shape[0]} microphones.")
 
     noise_added = False
@@ -318,7 +327,7 @@ def run_experiment_from_config(cfg_in: Dict[str, Any], log: LogFn = None, show_p
             fusion="median",
         )
         x_hat, dbg = estimate_source_multiref_tdoa(
-            mic_positions=np.asarray(scene.mic_array.positions, float),
+            mic_positions=np.asarray(algorithm_mic_positions, float),
             y=y,
             fs=fs,
             c=prop_cfg.c,
@@ -336,11 +345,11 @@ def run_experiment_from_config(cfg_in: Dict[str, Any], log: LogFn = None, show_p
         cfg_E = EnergyConfig(remove_mean=True, window_s=float(a["er_window_s"]), hop_s=float(a["er_hop_s"]), trim_frac=float(a["er_trim_frac"]))
         if not _bool(p.get("use_floor_image", True)):
             cfg_ls = ERLSConfig(ref_idx=int(float(a["er_ref_idx"])), kappa_eps=float(a["er_kappa_eps"]), min_pairs=3)
-            x_hat, err, dbg = er_ls(np.asarray(scene.mic_array.positions, float), y, fs, cfg_E, cfg_ls, mic_gains=None)
+            x_hat, err, dbg = er_ls(np.asarray(algorithm_mic_positions, float), y, fs, cfg_E, cfg_ls, mic_gains=None)
             if show_plots:
                 from chamber_sim.er_ls.viz import plot_apollonius_spheres_3d
                 plot_apollonius_spheres_3d(
-                    mic_positions=np.asarray(scene.mic_array.positions, float),
+                    mic_positions=np.asarray(algorithm_mic_positions, float),
                     spheres=dbg["spheres"],
                     x_true=np.asarray(scene.sources[0].position, float),
                     x_hat=np.asarray(x_hat, float),
@@ -351,7 +360,7 @@ def run_experiment_from_config(cfg_in: Dict[str, Any], log: LogFn = None, show_p
             gcfg = GroundConfig(floor_z=_float(p["floor_z"], "floor_z"), enforce_z_positive=True)
             cfg_g = ERLSGroundConfig(max_iter=30, lam=1e-2, tol_step=1e-6, tol_cost=1e-9, beta_min=0.0, beta_max=2.0, beta_grid=41)
             x_hat, err, dbg = er_ls_ground(
-                mic_positions=np.asarray(scene.mic_array.positions, float),
+                mic_positions=np.asarray(algorithm_mic_positions, float),
                 y=y,
                 fs=fs,
                 x0=None,
@@ -371,12 +380,12 @@ def run_experiment_from_config(cfg_in: Dict[str, Any], log: LogFn = None, show_p
         if not _bool(p.get("use_floor_image", True)):
             cfg_ls = ERLSConfig(ref_idx=int(float(a["er_ref_idx"])), kappa_eps=float(a["er_kappa_eps"]), min_pairs=3)
             cfg_nls = ERNLSConfig(max_iter=int(float(a["ernls_max_iter"])), lam=float(a["ernls_lam"]), tol_step=float(a["ernls_tol_step"]), tol_cost=float(a["ernls_tol_cost"]), kappa_eps=float(a["er_kappa_eps"]))
-            x_hat, err, dbg = er_nls(np.asarray(scene.mic_array.positions, float), y, fs, None, cfg_E, cfg_ls, cfg_nls, mic_gains=None)
+            x_hat, err, dbg = er_nls(np.asarray(algorithm_mic_positions, float), y, fs, None, cfg_E, cfg_ls, cfg_nls, mic_gains=None)
         else:
             gcfg = GroundConfig(floor_z=_float(p["floor_z"], "floor_z"), enforce_z_positive=True)
             cfg_ls_g = ERLSGroundConfig(max_iter=30, lam=1e-2, tol_step=1e-6, tol_cost=1e-9, beta_min=0.0, beta_max=2.0, beta_grid=41)
             cfg_nls_g = ERNLSGroundConfig(max_iter=int(float(a["ernls_max_iter"])), lam=float(a["ernls_lam"]), tol_step=float(a["ernls_tol_step"]), tol_cost=float(a["ernls_tol_cost"]))
-            x_hat, err, dbg = er_nls_ground(np.asarray(scene.mic_array.positions, float), y, fs, None, None, cfg_E, cfg_ls_g, cfg_nls_g, gcfg)
+            x_hat, err, dbg = er_nls_ground(np.asarray(algorithm_mic_positions, float), y, fs, None, None, cfg_E, cfg_ls_g, cfg_nls_g, gcfg)
             if isinstance(dbg, dict):
                 _log(log, f"beta used: {dbg.get('beta')} K_hat: {dbg.get('K_hat')}")
         _log(log, "----- ER-NLS RESULTS -----")
@@ -409,7 +418,7 @@ def run_experiment_from_config(cfg_in: Dict[str, Any], log: LogFn = None, show_p
         )
         gcfg_mle = MLEEMGeometryConfig(floor_z=_float(p["floor_z"], "floor_z"), enforce_z_positive=True, z_margin=1e-6)
         dbg_flags = MLEEMDebugFlags(keep_alpha_grid_details=True, keep_iteration_details=True)
-        x_hat, err, dbg = mle_em_ground(np.asarray(scene.mic_array.positions, float), y, fs, None, None, cfg_E, cfg_init, cfg_mle, gcfg_mle, dbg_flags)
+        x_hat, err, dbg = mle_em_ground(np.asarray(algorithm_mic_positions, float), y, fs, None, None, cfg_E, cfg_init, cfg_mle, gcfg_mle, dbg_flags)
         _log(log, "----- MLE/EM GROUND RESULTS -----")
         _log(log, f"Estimated source [m]: {np.round(x_hat, 3)}")
         _log(log, f"Residual RMS: {err}")
