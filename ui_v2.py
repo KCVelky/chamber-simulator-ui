@@ -16,7 +16,7 @@ if str(SRC_DIR) not in sys.path:
 
 try:
     from PySide6.QtCore import Qt, QTimer
-    from PySide6.QtGui import QAction
+    from PySide6.QtGui import QAction, QFont
     from PySide6.QtWidgets import (
         QApplication,
         QCheckBox,
@@ -531,7 +531,7 @@ def _parameter_tooltip(path: Tuple[str, ...], display_name: str = "") -> str:
 
 COMSOL_QSS = """
 * {
-    font-family: 'Segoe UI', Arial, sans-serif;
+    font-family: 'Aptos', 'Segoe UI Variable', 'Segoe UI', 'Inter', Arial, sans-serif;
     font-size: 12px;
 }
 QMainWindow, QWidget {
@@ -573,7 +573,7 @@ QFrame#RibbonGroup {
 QLabel#RibbonGroupTitle {
     color: #526176;
     font-size: 10px;
-    font-weight: 700;
+    font-weight: 600;
 }
 QToolButton {
     background: #ffffff;
@@ -589,11 +589,17 @@ QToolButton:hover {
 QToolButton:pressed {
     background: #cfe2ff;
 }
+QToolButton:checked {
+    background: #dbeafe;
+    border-color: #2563eb;
+    color: #1d4ed8;
+    font-weight: 600;
+}
 QToolButton#PrimaryTool {
     background: #2563eb;
     border-color: #1d4ed8;
     color: #ffffff;
-    font-weight: 700;
+    font-weight: 600;
 }
 QToolButton#PrimaryTool:hover {
     background: #1d4ed8;
@@ -604,7 +610,7 @@ QFrame#LeftPanel, QFrame#RightPanel, QFrame#BottomPanel, QFrame#GraphicsPanel {
 }
 QLabel#PanelTitle {
     font-size: 14px;
-    font-weight: 700;
+    font-weight: 600;
     color: #172033;
 }
 QLabel#SubtleText, QLabel#FieldHelp {
@@ -614,12 +620,12 @@ QLabel#SubtleText, QLabel#FieldHelp {
 QLabel#MetricValue {
     color: #172033;
     font-size: 16px;
-    font-weight: 800;
+    font-weight: 600;
 }
 QLabel#MetricLabel {
     color: #64748b;
     font-size: 10px;
-    font-weight: 700;
+    font-weight: 600;
 }
 QTreeWidget {
     background: #ffffff;
@@ -648,7 +654,7 @@ QTabBar::tab {
 QTabBar::tab:selected {
     background: #ffffff;
     color: #0f172a;
-    font-weight: 700;
+    font-weight: 600;
 }
 QGroupBox {
     background: #ffffff;
@@ -656,7 +662,7 @@ QGroupBox {
     border-radius: 3px;
     margin-top: 12px;
     padding: 14px 10px 10px 10px;
-    font-weight: 700;
+    font-weight: 600;
 }
 QGroupBox::title {
     subcontrol-origin: margin;
@@ -695,7 +701,7 @@ QPlainTextEdit#Console {
     background: #0f172a;
     color: #dbeafe;
     border: 1px solid #334155;
-    font-family: Consolas, 'Cascadia Mono', monospace;
+    font-family: 'Cascadia Mono', Consolas, 'Courier New', monospace;
     font-size: 11px;
 }
 QPlainTextEdit#ErrorConsole {
@@ -905,11 +911,8 @@ class SceneViewWidget(QWidget):
 
         self._plotter.clear()
         scale = max(min(Lx, Ly, Lz), 0.1)
-
-        # Taille des objets 3D
-        mic_radius = max(0.018 * scale, 0.018)   # micros bleus
-        src_radius = max(0.030 * scale, 0.030)   # source rouge
-        est_radius = max(0.026 * scale, 0.026)   # source estimée verte
+        mic_radius = max(0.035 * scale, 0.035)
+        src_radius = max(0.055 * scale, 0.055)
 
         # Room wireframe.
         room = pv.Cube(center=(Lx / 2.0, Ly / 2.0, Lz / 2.0), x_length=Lx, y_length=Ly, z_length=Lz)
@@ -952,7 +955,7 @@ class SceneViewWidget(QWidget):
         if estimated_source is not None:
             estimated = np.asarray(estimated_source, dtype=float).reshape(-1)[:3]
             estimated = np.clip(estimated, [0.0, 0.0, 0.0], [Lx, Ly, Lz])
-            est_mesh = pv.Sphere(radius=est_radius, center=tuple(estimated), theta_resolution=32, phi_resolution=16)
+            est_mesh = pv.Sphere(radius=src_radius * 0.9, center=tuple(estimated), theta_resolution=32, phi_resolution=16)
             self._plotter.add_mesh(est_mesh, color="#22c55e", smooth_shading=True, name="estimated_source")
             self._plotter.add_point_labels(
                 np.asarray([estimated]), ["Estimée"],
@@ -990,20 +993,29 @@ class SceneViewWidget(QWidget):
 class ComsolChamberSimUI(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
-        self.setWindowTitle("ChamberSim — V2")
+        self.setWindowTitle("ChamberSim — COMSOL Style Workspace")
         self.resize(1540, 940)
         self.setMinimumSize(1180, 760)
 
         self.controls: Dict[Tuple[str, ...], Any] = {}
         self.estimated_source: Optional[np.ndarray] = None
         self._is_applying_config = False
+        self._is_computing = False
+        self._auto_compute_enabled = True
+        self._auto_compute_delay_ms = 400
+
         self._scene_refresh_timer = QTimer(self)
         self._scene_refresh_timer.setSingleShot(True)
         self._scene_refresh_timer.timeout.connect(self.refresh_scene)
 
+        self._auto_compute_timer = QTimer(self)
+        self._auto_compute_timer.setSingleShot(True)
+        self._auto_compute_timer.timeout.connect(self._auto_compute)
+
         self._build_ui()
         self._build_menu()
         self._apply_config(DEFAULT_CONFIG)
+        self._auto_compute_timer.stop()
         self.refresh_scene(reset_camera=True)
         self._append_log("Interface initialisée.")
 
@@ -1084,17 +1096,18 @@ class ComsolChamberSimUI(QMainWindow):
         layout.setSpacing(8)
 
         layout.addWidget(self._ribbon_group("Fichier", [
-            ("📂 Charger", self.load_config, False),
-            ("💾 Enregistrer", self.save_config, False),
-            ("↺ Défauts", lambda: self._apply_config(DEFAULT_CONFIG), False),
+            ("Charger", self.load_config, False),
+            ("Enregistrer", self.save_config, False),
+            ("Défauts", lambda: self._apply_config(DEFAULT_CONFIG), False),
         ]))
         layout.addWidget(self._ribbon_group("Étude", [
-            ("▶ Compute", self.run_experiment, True),
-            ("🧹 Effacer", self.clear_results, False),
+            ("Calculer", self.run_experiment, True),
+            ("Auto", self._toggle_auto_compute, False, True),
+            ("Effacer", self.clear_results, False),
         ]))
         layout.addWidget(self._ribbon_group("Vue 3D", [
-            ("🔄 Rebuild", lambda: self.refresh_scene(reset_camera=False), False),
-            ("🎯 Reset", self.reset_camera, False),
+            ("Rebuild", lambda: self.refresh_scene(reset_camera=False), False),
+            ("Reset", self.reset_camera, False),
         ]))
         layout.addWidget(self._ribbon_group("Caméra", [
             ("XY", lambda: self.set_camera_preset("xy"), False),
@@ -1103,9 +1116,9 @@ class ComsolChamberSimUI(QMainWindow):
             ("Iso", lambda: self.set_camera_preset("iso"), False),
         ]))
         layout.addWidget(self._ribbon_group("Microphones", [
-            ("▦ Carré 4", self.preset_square_4, False),
-            ("⬡ Hexa 6", self.preset_hex_6, False),
-            ("✦ Aléatoire", self.preset_random, False),
+            ("Carré 4", self.preset_square_4, False),
+            ("Hexa 6", self.preset_hex_6, False),
+            ("Aléatoire", self.preset_random, False),
         ]))
         layout.addWidget(self._ribbon_group("Navigation", [
             ("Pièce", lambda: self.settings_tabs.setCurrentIndex(0), False),
@@ -1115,7 +1128,7 @@ class ComsolChamberSimUI(QMainWindow):
         layout.addStretch(1)
         return ribbon
 
-    def _ribbon_group(self, title: str, buttons: Iterable[Tuple[str, Any, bool]]) -> QWidget:
+    def _ribbon_group(self, title: str, buttons: Iterable[Tuple[Any, ...]]) -> QWidget:
         group = QFrame()
         group.setObjectName("RibbonGroup")
         group.setMinimumWidth(130)
@@ -1124,10 +1137,21 @@ class ComsolChamberSimUI(QMainWindow):
         box.setSpacing(4)
         row = QHBoxLayout()
         row.setSpacing(4)
-        for text, callback, primary in buttons:
+        for spec in buttons:
+            text, callback, primary = spec[:3]
+            checkable = bool(spec[3]) if len(spec) > 3 else False
             button = QToolButton()
             button.setText(text)
             button.setToolButtonStyle(Qt.ToolButtonTextOnly)
+            button.setCheckable(checkable)
+            if checkable:
+                button.setChecked(self._auto_compute_enabled)
+            if text == "Auto":
+                self.auto_compute_button = button
+                button.setToolTip(
+                    "Recalcule automatiquement la simulation après une modification de paramètre.\n"
+                    "Le lancement est temporisé pour éviter de recalculer à chaque frappe clavier."
+                )
             if primary:
                 button.setObjectName("PrimaryTool")
             button.clicked.connect(callback)
@@ -1248,7 +1272,7 @@ class ComsolChamberSimUI(QMainWindow):
 
         title = QLabel("Settings")
         title.setObjectName("PanelTitle")
-        subtitle = QLabel("Configuration en temps réel : la vue 3D se met à jour automatiquement.")
+        subtitle = QLabel("Configuration en temps réel : la vue 3D se met à jour dès que tu modifies la pièce, la source ou les micros.")
         subtitle.setObjectName("SubtleText")
         subtitle.setWordWrap(True)
         layout.addWidget(title)
@@ -1548,6 +1572,22 @@ class ComsolChamberSimUI(QMainWindow):
         self.controls[path] = w
         return label, w
 
+    def _toggle_auto_compute(self, checked: bool = False) -> None:
+        self._auto_compute_enabled = bool(checked)
+        if hasattr(self, "auto_compute_button"):
+            self.auto_compute_button.setChecked(self._auto_compute_enabled)
+        if self._auto_compute_enabled:
+            self.statusBar().showMessage("Auto compute activé")
+            self._auto_compute_timer.start(250)
+        else:
+            self._auto_compute_timer.stop()
+            self.statusBar().showMessage("Auto compute désactivé")
+
+    def _auto_compute(self) -> None:
+        if self._is_applying_config or not self._auto_compute_enabled or self._is_computing:
+            return
+        self.run_experiment(auto=True)
+
     # ------------------------------------------------------------------
     # Config mapping and realtime updates
     # ------------------------------------------------------------------
@@ -1570,6 +1610,11 @@ class ComsolChamberSimUI(QMainWindow):
         self.estimated_source = None
         self._update_metrics()
         self._scene_refresh_timer.start(120)
+        if self._auto_compute_enabled:
+            self._auto_compute_timer.start(self._auto_compute_delay_ms)
+            self.statusBar().showMessage(
+                f"Paramètre modifié — auto compute dans {self._auto_compute_delay_ms / 1000:.1f} s"
+            )
 
     def _get_config(self) -> Dict[str, Any]:
         cfg = deep_copy_config(DEFAULT_CONFIG)
@@ -1610,6 +1655,8 @@ class ComsolChamberSimUI(QMainWindow):
         self.estimated_source = None
         self._update_metrics()
         self.refresh_scene(reset_camera=True)
+        if self._auto_compute_enabled:
+            self._auto_compute_timer.start(self._auto_compute_delay_ms)
 
     def refresh_scene(self, reset_camera: bool = False) -> None:
         if not hasattr(self, "scene_view"):
@@ -1680,13 +1727,17 @@ class ComsolChamberSimUI(QMainWindow):
         except Exception as exc:
             QMessageBox.critical(self, "Load error", str(exc))
 
-    def run_experiment(self) -> None:
+    def run_experiment(self, auto: bool = False) -> None:
+        if self._is_computing:
+            return
+        self._auto_compute_timer.stop()
+        self._is_computing = True
         self.clear_results(keep_log=True)
         cfg = self._get_config()
         self.estimated_source = None
         self.refresh_scene(reset_camera=False)
         self._show_run_started(cfg)
-        self._append_log("Starting experiment...")
+        self._append_log("Starting experiment..." + (" [auto]" if auto else ""))
         QApplication.setOverrideCursor(Qt.WaitCursor)
         QApplication.processEvents()
         try:
@@ -1698,11 +1749,13 @@ class ComsolChamberSimUI(QMainWindow):
                 self._append_log(json.dumps(result_dict, indent=2, ensure_ascii=False))
             self._show_run_success(result, cfg, result_dict)
         except Exception as exc:
-            QMessageBox.critical(self, "Experiment error", str(exc))
+            if not auto:
+                QMessageBox.critical(self, "Experiment error", str(exc))
             self._show_run_error(exc)
             self._append_log(f"ERROR: {exc}")
         finally:
             QApplication.restoreOverrideCursor()
+            self._is_computing = False
             self._update_metrics()
 
     def _show_run_started(self, cfg: Dict[str, Any]) -> None:
@@ -1925,6 +1978,7 @@ class ComsolChamberSimUI(QMainWindow):
 
 def apply_theme(app: QApplication) -> None:
     app.setStyle("Fusion")
+    app.setFont(QFont("Aptos", 10))
     app.setStyleSheet(COMSOL_QSS)
 
 
