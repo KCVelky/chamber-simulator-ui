@@ -593,7 +593,11 @@ QToolButton:checked {
     background: #dbeafe;
     border-color: #2563eb;
     color: #1d4ed8;
+<<<<<<< HEAD
     font-weight: 600;
+=======
+    font-weight: 700;
+>>>>>>> a55a84498a50c5d2dc3f1c632078fddb4a9b774b
 }
 QToolButton#PrimaryTool {
     background: #2563eb;
@@ -1101,9 +1105,15 @@ class ComsolChamberSimUI(QMainWindow):
             ("Défauts", lambda: self._apply_config(DEFAULT_CONFIG), False),
         ]))
         layout.addWidget(self._ribbon_group("Étude", [
+<<<<<<< HEAD
             ("Calculer", self.run_experiment, True),
             ("Auto", self._toggle_auto_compute, False, True),
             ("Effacer", self.clear_results, False),
+=======
+            ("▶ Compute", self.run_experiment, True),
+            ("⚡ Auto", self._toggle_auto_compute, False, True),
+            ("🧹 Effacer", self.clear_results, False),
+>>>>>>> a55a84498a50c5d2dc3f1c632078fddb4a9b774b
         ]))
         layout.addWidget(self._ribbon_group("Vue 3D", [
             ("Rebuild", lambda: self.refresh_scene(reset_camera=False), False),
@@ -1146,7 +1156,11 @@ class ComsolChamberSimUI(QMainWindow):
             button.setCheckable(checkable)
             if checkable:
                 button.setChecked(self._auto_compute_enabled)
+<<<<<<< HEAD
             if text == "Auto":
+=======
+            if text.startswith("⚡"):
+>>>>>>> a55a84498a50c5d2dc3f1c632078fddb4a9b774b
                 self.auto_compute_button = button
                 button.setToolTip(
                     "Recalcule automatiquement la simulation après une modification de paramètre.\n"
@@ -1742,7 +1756,7 @@ class ComsolChamberSimUI(QMainWindow):
         QApplication.processEvents()
         try:
             # show_plots=False keeps the workflow inside this COMSOL-like UI.
-            result = run_experiment_from_config(cfg, log=self._append_log, show_plots=True)
+            result = run_experiment_from_config(cfg, log=self._append_log, show_plots=False)
             result_dict = result.as_dict() if hasattr(result, "as_dict") else {}
             self._append_log("Finished successfully.")
             if result_dict:
