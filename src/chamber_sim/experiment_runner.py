@@ -15,7 +15,7 @@ from chamber_sim.tdoa import GridSearchConfig
 from chamber_sim.tdoa.localization import MultiRefTDOAConfig, estimate_source_multiref_tdoa
 from chamber_sim.tdoa.denoise import DenoiseConfig
 from chamber_sim.er_ls.config import EnergyConfig, ERLSConfig
-from chamber_sim.er_ls import er_ls
+from chamber_sim.er_ls import er_ls, er_ls_free_field
 from chamber_sim.er_nls import er_nls
 from chamber_sim.er_nls.config import ERNLSConfig
 from chamber_sim.er_ls.er_ls_ground import er_ls_ground, ERLSGroundConfig
@@ -125,6 +125,15 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "zoom_tmax": "0.2",
         "plot_denoise_compare": False,
         "plot_denoise_mic": "0",
+    },
+    "comparison": {
+        "enabled": False,
+        "mode": "Deux algorithmes",
+        "algorithm_a": "ER_LS",
+        "algorithm_b": "ER_NLS",
+        "mic_algorithm": "ER_LS",
+        "mics_a_csv": "3.0,3.0,1.5\n3.5,3.0,1.5\n3.0,3.5,1.5\n3.5,3.5,1.5",
+        "mics_b_csv": "2.8,3.0,1.5\n3.7,3.0,1.5\n3.25,3.45,1.5\n3.25,2.55,1.5\n3.25,3.0,1.95\n3.25,3.0,1.05",
     },
 }
 
@@ -340,6 +349,36 @@ def run_experiment_from_config(cfg_in: Dict[str, Any], log: LogFn = None, show_p
         _log(log, f"True source [m]: {np.round(scene.sources[0].position, 3)}")
         if isinstance(dbg, dict) and "costs_per_ref" in dbg:
             _log(log, f"Costs per ref: {np.round(dbg['costs_per_ref'], 6)}")
+
+
+    elif _bool(a.get("enable_algorithms", True)) and alg_choice == "ER_LS_FREE_FIELD":
+        cfg_E = EnergyConfig(remove_mean=True, window_s=float(a["er_window_s"]), hop_s=float(a["er_hop_s"]), trim_frac=float(a["er_trim_frac"]))
+        cfg_ls = ERLSConfig(ref_idx=int(float(a["er_ref_idx"])), kappa_eps=float(a["er_kappa_eps"]), min_pairs=3)
+        x_hat, err, dbg = er_ls_free_field(
+            mic_positions=np.asarray(algorithm_mic_positions, float),
+            y=y,
+            fs=fs,
+            cfg_E=cfg_E,
+            cfg=cfg_ls,
+            mic_gains=None,
+        )
+        _log(log, "----- ER-LS FREE FIELD RESULTS -----")
+        _log(log, "Model used by estimator: classical inverse-square energy model only, E_i ≈ K / r_i²")
+        if _bool(p.get("use_floor_image", True)):
+            _log(log, "Note: floor/image reflection is present in simulated signals, but this algorithm intentionally ignores it.")
+        _log(log, f"Estimated source [m]: {np.round(x_hat, 3)}")
+        _log(log, f"Residual RMS [m]: {err}")
+        _log(log, f"True source [m]: {np.round(scene.sources[0].position, 3)}")
+        if show_plots:
+            from chamber_sim.er_ls.viz import plot_apollonius_spheres_3d
+            plot_apollonius_spheres_3d(
+                mic_positions=np.asarray(algorithm_mic_positions, float),
+                spheres=dbg["spheres"],
+                x_true=np.asarray(scene.sources[0].position, float),
+                x_hat=np.asarray(x_hat, float),
+                room_size=np.asarray(scene.room.size, float),
+                select_mode="radius",
+            )
 
     elif _bool(a.get("enable_algorithms", True)) and alg_choice == "ER_LS":
         cfg_E = EnergyConfig(remove_mean=True, window_s=float(a["er_window_s"]), hop_s=float(a["er_hop_s"]), trim_frac=float(a["er_trim_frac"]))
