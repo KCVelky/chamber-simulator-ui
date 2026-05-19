@@ -1098,6 +1098,102 @@ class SceneViewWidget(QWidget):
     def reset_camera(self) -> None:
         self.set_camera_preset("iso")
 
+
+    def _add_3d_x_marker(self, center: Any, radius: float, color: str, name: str) -> None:
+        """Ajoute un marqueur en X 3D composé de deux cylindres diagonaux."""
+        center = tuple(np.asarray(center, dtype=float).reshape(-1)[:3])
+
+        length = radius * 3.0
+        thickness = radius * 0.16
+
+        directions = [
+            (1.0, 1.0, 0.0),
+            (1.0, -1.0, 0.0),
+        ]
+
+        for j, direction in enumerate(directions):
+            cyl = pv.Cylinder(
+                center=center,
+                direction=direction,
+                radius=thickness,
+                height=length,
+                resolution=24,
+            )
+
+            self._plotter.add_mesh(
+                cyl,
+                color=color,
+                smooth_shading=True,
+                show_edges=True,
+                edge_color="#111827",
+                line_width=1,
+                name=f"{name}_x_{j}",
+            )
+    
+    def _hex_to_rgb01(self, hex_color: str):
+        """Convertit '#RRGGBB' en RGB entre 0 et 1 pour VTK."""
+        hex_color = hex_color.lstrip("#")
+        return tuple(int(hex_color[i:i+2], 16) / 255.0 for i in (0, 2, 4))
+
+
+    def _add_billboard_x_marker(self, center: Any, radius: float, color: str, name: str) -> None:
+        """
+        Ajoute un X 3D qui reste toujours face à la caméra.
+        Version robuste basée sur vtkVectorText + vtkFollower.
+        """
+        import vtk
+
+        center = np.asarray(center, dtype=float).reshape(-1)[:3]
+        rgb = self._hex_to_rgb01(color)
+
+        # Texte vectoriel 3D. Utiliser "X" plutôt que "✕" pour éviter les problèmes de police.
+        text_source = vtk.vtkVectorText()
+        text_source.SetText("X")
+        text_source.Update()
+
+        # Centrage géométrique du X autour de son origine.
+        bounds = text_source.GetOutput().GetBounds()
+        cx = 0.5 * (bounds[0] + bounds[1])
+        cy = 0.5 * (bounds[2] + bounds[3])
+        cz = 0.5 * (bounds[4] + bounds[5])
+
+        transform = vtk.vtkTransform()
+        transform.Translate(-cx, -cy, -cz)
+
+        transform_filter = vtk.vtkTransformPolyDataFilter()
+        transform_filter.SetInputConnection(text_source.GetOutputPort())
+        transform_filter.SetTransform(transform)
+        transform_filter.Update()
+
+        mapper = vtk.vtkPolyDataMapper()
+        mapper.SetInputConnection(transform_filter.GetOutputPort())
+
+        actor = vtk.vtkFollower()
+        actor.SetMapper(mapper)
+        actor.SetPosition(float(center[0]), float(center[1]), float(center[2]))
+
+        # Taille du X. Augmente le coefficient si tu le veux plus gros.
+        scale = max(float(radius) * 1.8, 1e-3)
+        actor.SetScale(scale, scale, scale)
+
+        actor.GetProperty().SetColor(*rgb)
+        actor.GetProperty().SetOpacity(1.0)
+
+        # Alternative robuste : décale très légèrement le X vers la caméra.
+        camera = self._plotter.renderer.GetActiveCamera()
+        cam_pos = np.asarray(camera.GetPosition(), dtype=float)
+        direction_to_camera = cam_pos - center
+        direction_to_camera /= np.linalg.norm(direction_to_camera) + 1e-12
+        offset_center = center + 0.03 * direction_to_camera
+
+        actor.SetPosition(float(offset_center[0]), float(offset_center[1]), float(offset_center[2]))
+
+        # Le X suit la caméra.
+        actor.SetCamera(self._plotter.renderer.GetActiveCamera())
+
+        self._plotter.add_actor(actor, name=name)
+        self._plotter.render()
+
     def update_scene(self, cfg: Dict[str, Any], estimated_source: Any = None, comparison_estimates: Any = None, reset_camera: bool = False) -> None:
         self._last_cfg = cfg
         self._last_estimated_source = None if estimated_source is None else np.asarray(estimated_source, dtype=float).reshape(-1)[:3]
@@ -1207,9 +1303,18 @@ class SceneViewWidget(QWidget):
                 self._add_movable_label("interference_heatmap_error", f"Heatmap indisponible : {exc}", (0.05 * Lx, 0.05 * Ly, Lz), "#b45309")
 
         # Source.
+        # Source : losange 3D / octaèdre.
         source = np.clip(source, [0.0, 0.0, 0.0], [Lx, Ly, Lz])
-        source_mesh = pv.Sphere(radius=src_radius, center=tuple(source), theta_resolution=32, phi_resolution=16)
-        self._plotter.add_mesh(source_mesh, color="#ef4444", smooth_shading=True, name="source")
+        source_mesh = pv.PlatonicSolid(kind="octahedron", radius=src_radius * 1.25, center=tuple(source))
+        self._plotter.add_mesh(
+            source_mesh,
+            color="#ef4444",
+            smooth_shading=True,
+            show_edges=True,
+            edge_color="#7f1d1d",
+            line_width=1,
+            name="source",
+        )
         self._add_movable_label("source", "Source", source, "#ef4444", dx=12, dy=-30)
 
         # Microphones.
@@ -1263,8 +1368,12 @@ class SceneViewWidget(QWidget):
                     label = f"Estimation {idx + 1}"
                     color = "#22c55e"
                 estimated = np.clip(estimated, [0.0, 0.0, 0.0], [Lx, Ly, Lz])
-                est_mesh = pv.Sphere(radius=src_radius * 0.9, center=tuple(estimated), theta_resolution=32, phi_resolution=16)
-                self._plotter.add_mesh(est_mesh, color=color, smooth_shading=True, name=f"comparison_estimated_source_{idx}")
+                self._add_billboard_x_marker(
+                    center=estimated,
+                    radius=src_radius * 0.95,
+                    color=color,
+                    name=f"comparison_estimated_source_{idx}",
+                )
                 display_label = "Famille A" if label.lower().startswith("famille a") else label
                 display_label = "Famille B" if display_label.lower().startswith("famille b") else display_label
                 self._add_movable_label(f"comparison_estimated_{idx}", display_label, estimated, color, dx=12, dy=-30)
@@ -1273,8 +1382,12 @@ class SceneViewWidget(QWidget):
         elif estimated_source is not None:
             estimated = np.asarray(estimated_source, dtype=float).reshape(-1)[:3]
             estimated = np.clip(estimated, [0.0, 0.0, 0.0], [Lx, Ly, Lz])
-            est_mesh = pv.Sphere(radius=src_radius * 0.9, center=tuple(estimated), theta_resolution=32, phi_resolution=16)
-            self._plotter.add_mesh(est_mesh, color="#22c55e", smooth_shading=True, name="estimated_source")
+            self._add_billboard_x_marker(
+                center=estimated,
+                radius=src_radius * 0.95,
+                color="#22c55e",
+                name="estimated_source",
+            )
             self._add_movable_label("estimated", "Estimée", estimated, "#22c55e", dx=12, dy=-30)
             line = pv.Line(tuple(source), tuple(estimated))
             self._plotter.add_mesh(line, color="#f59e0b", line_width=3, name="error_line")
